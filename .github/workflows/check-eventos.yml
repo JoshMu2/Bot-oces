@@ -1,0 +1,40 @@
+name: Revisar eventos nuevos
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # cada hora; ajustalo si querés más o menos frecuencia
+  workflow_dispatch:        # te deja correrlo manualmente desde la pestaña Actions
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          pip install playwright requests
+          playwright install --with-deps chromium
+
+      - name: Ejecutar script
+        env:
+          EVENTOS_USER: ${{ secrets.EVENTOS_USER }}
+          EVENTOS_PASS: ${{ secrets.EVENTOS_PASS }}
+          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+        run: python monitor_eventos.py
+
+      - name: Guardar estado actualizado
+        run: |
+          git config user.name "bot-eventos"
+          git config user.email "bot@users.noreply.github.com"
+          git add estado_eventos.json
+          git diff --quiet --cached || git commit -m "Actualizar estado de eventos"
+          git push
