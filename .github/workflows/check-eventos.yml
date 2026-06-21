@@ -2,7 +2,7 @@ name: Revisar eventos nuevos
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # cada hora; ajustalo si querés más o menos frecuencia
+    - cron: "0 * * * *"   # cada hora; ajustalo si querés más o menos frecuencia
   workflow_dispatch:        # te deja correrlo manualmente desde la pestaña Actions
 
 permissions:
@@ -30,6 +30,14 @@ jobs:
           CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
         run: python monitor_eventos.py
+
+      - name: Subir captura de pantalla (diagnóstico)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot
+          path: debug_screenshot.png
+          retention-days: 5
 
       - name: Guardar estado actualizado
         run: |
