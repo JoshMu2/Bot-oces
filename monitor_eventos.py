@@ -32,6 +32,7 @@ CALLMEBOT_PHONE = os.environ["CALLMEBOT_PHONE"]
 CALLMEBOT_APIKEY = os.environ["CALLMEBOT_APIKEY"]
 
 STATE_FILE = "estado_eventos.json"
+SCREENSHOT_FILE = "debug_screenshot.png"
 
 
 def enviar_whatsapp(mensaje: str):
@@ -41,13 +42,42 @@ def enviar_whatsapp(mensaje: str):
     print("CallMeBot respuesta:", r.status_code, r.text[:200])
 
 
-def obtener_texto_eventos(page) -> str:
+def hacer_login(page):
+    page.goto(LOGIN_URL)
     page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(2000)  # margen extra por si el JS tarda en pintar
 
+    # Intento 1: por etiqueta de texto visible
+    try:
+        page.get_by_label(re.compile("Usuario", re.I)).fill(USUARIO)
+        page.get_by_label(re.compile("Password", re.I)).fill(PASSWORD)
+    except Exception:
+        # Intento 2: por el atributo type, que es mas confiable que el orden
+        # (evita inputs ocultos como tokens CSRF que rompen el conteo por indice)
+        page.locator('input[type="password"]').first.fill(PASSWORD)
+        campo_usuario = page.locator(
+            'input[type="text"], input[type="email"], input:not([type])'
+        ).first
+        campo_usuario.fill(USUARIO)
+
+    page.get_by_role("button", name=re.compile("Entrar", re.I)).click()
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1500)
+
+    print("URL despues del intento de login:", page.url)
+
+    if "confirmaciones" not in page.url:
+        page.goto(EVENTOS_URL)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1500)
+
+
+def obtener_texto_eventos(page):
     contenido = page.inner_text("body")
 
-    # Recorta solo lo que esta entre "EVENTOS DISPONIBLES" y "EVENTOS CONFIRMADOS"
+    if "EVENTOS DISPONIBLES" not in contenido:
+        # No llegamos a la pagina correcta -> probablemente fallo el login
+        return None
+
     match = re.search(r"EVENTOS DISPONIBLES(.*?)EVENTOS CONFIRMADOS", contenido, re.S)
     return match.group(1).strip() if match else contenido.strip()
 
@@ -68,25 +98,23 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(LOGIN_URL)
 
-        # --- Login: intenta por etiqueta de texto, si falla usa los inputs en orden ---
-        try:
-            page.get_by_label(re.compile("Usuario", re.I)).fill(USUARIO)
-            page.get_by_label(re.compile("Password", re.I)).fill(PASSWORD)
-        except Exception:
-            inputs = page.locator("input")
-            inputs.nth(0).fill(USUARIO)
-            inputs.nth(1).fill(PASSWORD)
+        hacer_login(page)
 
-        page.get_by_role("button", name=re.compile("Entrar", re.I)).click()
-        page.wait_for_load_state("networkidle")
-
-        if "confirmaciones" not in page.url:
-            page.goto(EVENTOS_URL)
+        # Captura de pantalla SIEMPRE, para poder diagnosticar si algo sale mal
+        page.screenshot(path=SCREENSHOT_FILE, full_page=True)
 
         texto_actual = obtener_texto_eventos(page)
         browser.close()
+
+    if texto_actual is None:
+        print(
+            "ADVERTENCIA: no se encontro la seccion EVENTOS DISPONIBLES. "
+            "El login probablemente fallo. Revisa 'debug_screenshot.png' en los "
+            "artifacts de este run para ver que pantalla quedo cargada. "
+            "No se envio ningun WhatsApp."
+        )
+        return
 
     hash_actual = hashlib.sha256(texto_actual.encode("utf-8")).hexdigest()
     hash_anterior = cargar_hash_anterior()
