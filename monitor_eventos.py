@@ -59,10 +59,21 @@ def main():
         page.keyboard.type(USUARIO, delay=150)
         page.wait_for_timeout(800)
 
-        # Usar Tab para pasar al campo de contraseña (más confiable que click)
-        page.keyboard.press("Tab")
+        # Escribir contraseña carácter por carácter disparando todos los eventos
+        page.evaluate("""(password) => {
+            const el = document.getElementById('password');
+            el.focus();
+            el.value = '';
+            for (const char of password) {
+                el.value += char;
+                el.dispatchEvent(new KeyboardEvent('keydown', {key: char, bubbles: true}));
+                el.dispatchEvent(new KeyboardEvent('keypress', {key: char, bubbles: true}));
+                el.dispatchEvent(new InputEvent('input', {bubbles: true, data: char, inputType: 'insertText'}));
+                el.dispatchEvent(new KeyboardEvent('keyup', {key: char, bubbles: true}));
+            }
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+        }""", PASSWORD)
         page.wait_for_timeout(500)
-        page.keyboard.type(PASSWORD, delay=150)
 
         page.wait_for_timeout(500)
         print("Campos llenados, haciendo submit...")
