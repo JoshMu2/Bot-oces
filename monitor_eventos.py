@@ -30,31 +30,28 @@ def enviar_whatsapp(mensaje: str):
 
 def hacer_login(page):
     page.goto(LOGIN_URL)
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(2000)
 
-    # Esperar a que el campo de usuario sea visible antes de tocar nada
-    campo_usuario = page.locator('input[type="text"], input[type="email"], input:not([type="password"]):not([type="hidden"]):not([type="submit"])').first
-    campo_usuario.wait_for(state="visible", timeout=10000)
+    # Llenar con JavaScript directo para evitar el debugger anti-bot
+    page.evaluate(f"document.getElementById('usuario').value = '{USUARIO}'")
+    page.evaluate(f"document.getElementById('password').value = '{PASSWORD}'")
 
-    # Click antes de escribir, para activar el campo (necesario en algunos SPAs)
-    campo_usuario.click()
-    campo_usuario.fill(USUARIO)
+    # Disparar eventos de cambio para que el JS de validación los reconozca
+    page.evaluate("document.getElementById('usuario').dispatchEvent(new Event('input', {{bubbles: true}}))")
+    page.evaluate("document.getElementById('password').dispatchEvent(new Event('input', {{bubbles: true}}))")
 
-    campo_pass = page.locator('input[type="password"]').first
-    campo_pass.click()
-    campo_pass.fill(PASSWORD)
+    print("Campos llenados via JS, enviando formulario...")
 
-    print("Campos llenados, haciendo click en Entrar...")
-    page.get_by_role("button", name=re.compile("Entrar", re.I)).click()
-
-    # Esperar a que la navegacion ocurra
+    # Click en el botón de submit
+    page.locator("#login").click()
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
 
-    print("URL despues del login:", page.url)
+    print("URL después del login:", page.url)
 
-    # Si no llegamos a confirmaciones, intentar navegar directo
     if "confirmaciones" not in page.url:
-        print("No redirigió automáticamente, navegando directo a confirmaciones...")
+        print("No redirigió automáticamente, navegando directo...")
         page.goto(EVENTOS_URL)
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
@@ -87,8 +84,14 @@ def guardar_estado(nuevo_hash: str, texto: str):
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
 
         hacer_login(page)
         page.screenshot(path=SCREENSHOT_FILE, full_page=True)
@@ -98,8 +101,7 @@ def main():
     if texto_actual is None:
         print(
             "ADVERTENCIA: no se encontró EVENTOS DISPONIBLES. "
-            "El login probablemente falló. Revisá la captura debug_screenshot.png "
-            "en los artifacts de este run."
+            "Revisá la captura debug_screenshot.png en los artifacts."
         )
         return
 
@@ -120,3 +122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
