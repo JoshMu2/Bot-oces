@@ -1,19 +1,5 @@
 """
 Monitor de eventos - eventossistema.com.mx
--------------------------------------------
-Inicia sesion, lee la seccion "EVENTOS DISPONIBLES" y avisa por WhatsApp
-(via CallMeBot) si el contenido cambio desde la ultima revision.
-
-Requiere variables de entorno:
-  EVENTOS_USER       -> tu usuario del sistema
-  EVENTOS_PASS       -> tu contraseña
-  CALLMEBOT_PHONE    -> tu numero de WhatsApp con codigo de pais, sin "+" (ej: 5215512345678)
-  CALLMEBOT_APIKEY   -> apikey que te da CallMeBot (ver README)
-
-Instalacion local para probar:
-  pip install playwright requests
-  playwright install chromium
-  EVENTOS_USER=xxx EVENTOS_PASS=xxx CALLMEBOT_PHONE=xxx CALLMEBOT_APIKEY=xxx python monitor_eventos.py
 """
 
 import os
@@ -44,38 +30,43 @@ def enviar_whatsapp(mensaje: str):
 
 def hacer_login(page):
     page.goto(LOGIN_URL)
-    page.wait_for_load_state("networkidle")
 
-    # Intento 1: por etiqueta de texto visible
-    try:
-        page.get_by_label(re.compile("Usuario", re.I)).fill(USUARIO)
-        page.get_by_label(re.compile("Password", re.I)).fill(PASSWORD)
-    except Exception:
-        # Intento 2: por el atributo type, que es mas confiable que el orden
-        # (evita inputs ocultos como tokens CSRF que rompen el conteo por indice)
-        page.locator('input[type="password"]').first.fill(PASSWORD)
-        campo_usuario = page.locator(
-            'input[type="text"], input[type="email"], input:not([type])'
-        ).first
-        campo_usuario.fill(USUARIO)
+    # Esperar a que el campo de usuario sea visible antes de tocar nada
+    campo_usuario = page.locator('input[type="text"], input[type="email"], input:not([type="password"]):not([type="hidden"]):not([type="submit"])').first
+    campo_usuario.wait_for(state="visible", timeout=10000)
 
+    # Click antes de escribir, para activar el campo (necesario en algunos SPAs)
+    campo_usuario.click()
+    campo_usuario.fill(USUARIO)
+
+    campo_pass = page.locator('input[type="password"]').first
+    campo_pass.click()
+    campo_pass.fill(PASSWORD)
+
+    print("Campos llenados, haciendo click en Entrar...")
     page.get_by_role("button", name=re.compile("Entrar", re.I)).click()
+
+    # Esperar a que la navegacion ocurra
     page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(3000)
 
-    print("URL despues del intento de login:", page.url)
+    print("URL despues del login:", page.url)
 
+    # Si no llegamos a confirmaciones, intentar navegar directo
     if "confirmaciones" not in page.url:
+        print("No redirigió automáticamente, navegando directo a confirmaciones...")
         page.goto(EVENTOS_URL)
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(3000)
+
+    print("URL final:", page.url)
 
 
 def obtener_texto_eventos(page):
     contenido = page.inner_text("body")
+    print("Primeros 300 caracteres del body:", contenido[:300])
 
     if "EVENTOS DISPONIBLES" not in contenido:
-        # No llegamos a la pagina correcta -> probablemente fallo el login
         return None
 
     match = re.search(r"EVENTOS DISPONIBLES(.*?)EVENTOS CONFIRMADOS", contenido, re.S)
@@ -100,19 +91,15 @@ def main():
         page = browser.new_page()
 
         hacer_login(page)
-
-        # Captura de pantalla SIEMPRE, para poder diagnosticar si algo sale mal
         page.screenshot(path=SCREENSHOT_FILE, full_page=True)
-
         texto_actual = obtener_texto_eventos(page)
         browser.close()
 
     if texto_actual is None:
         print(
-            "ADVERTENCIA: no se encontro la seccion EVENTOS DISPONIBLES. "
-            "El login probablemente fallo. Revisa 'debug_screenshot.png' en los "
-            "artifacts de este run para ver que pantalla quedo cargada. "
-            "No se envio ningun WhatsApp."
+            "ADVERTENCIA: no se encontró EVENTOS DISPONIBLES. "
+            "El login probablemente falló. Revisá la captura debug_screenshot.png "
+            "en los artifacts de este run."
         )
         return
 
@@ -124,7 +111,7 @@ def main():
         enviar_whatsapp(mensaje)
         print("Cambio detectado, WhatsApp enviado.")
     elif not hash_anterior:
-        print("Primera ejecucion: guardando estado base, sin enviar aviso.")
+        print("Primera ejecucion: guardando estado base.")
     else:
         print("Sin cambios.")
 
