@@ -38,8 +38,8 @@ def hacer_login(page):
     page.evaluate(f"document.getElementById('password').value = '{PASSWORD}'")
 
     # Disparar eventos de cambio para que el JS de validación los reconozca
-    page.evaluate("document.getElementById('usuario').dispatchEvent(new Event('input', {{bubbles: true}}))")
-    page.evaluate("document.getElementById('password').dispatchEvent(new Event('input', {{bubbles: true}}))")
+    page.evaluate("document.getElementById('usuario').dispatchEvent(new Event('input', {bubbles: true}))")
+    page.evaluate("document.getElementById('password').dispatchEvent(new Event('input', {bubbles: true}))")
 
     print("Campos llenados via JS, enviando formulario...")
 
@@ -122,4 +122,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
