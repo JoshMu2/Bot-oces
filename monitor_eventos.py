@@ -54,11 +54,19 @@ def main():
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
 
+        # Esperar a que jQuery esté disponible
+        page.wait_for_function("typeof $ !== 'undefined'")
+        page.wait_for_timeout(1000)
+
         # Usar jQuery directamente (el sitio ya lo carga) para llenar y disparar eventos
         page.evaluate(f"""
             $('#usuario').val('{USUARIO}').trigger('input').trigger('change').trigger('keyup');
             $('#password').val('{PASSWORD}').trigger('input').trigger('change').trigger('keyup');
         """)
+        page.wait_for_timeout(500)
+
+        # Screenshot para verificar que los campos quedaron llenos
+        page.screenshot(path="debug_before_submit.png", full_page=True)
 
         page.wait_for_timeout(500)
         print("Campos llenados, haciendo submit...")
