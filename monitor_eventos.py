@@ -54,26 +54,11 @@ def main():
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
 
-        # Escribir usuario letra por letra
-        page.click("#usuario")
-        page.keyboard.type(USUARIO, delay=150)
-        page.wait_for_timeout(800)
-
-        # Escribir contraseña carácter por carácter disparando todos los eventos
-        page.evaluate("""(password) => {
-            const el = document.getElementById('password');
-            el.focus();
-            el.value = '';
-            for (const char of password) {
-                el.value += char;
-                el.dispatchEvent(new KeyboardEvent('keydown', {key: char, bubbles: true}));
-                el.dispatchEvent(new KeyboardEvent('keypress', {key: char, bubbles: true}));
-                el.dispatchEvent(new InputEvent('input', {bubbles: true, data: char, inputType: 'insertText'}));
-                el.dispatchEvent(new KeyboardEvent('keyup', {key: char, bubbles: true}));
-            }
-            el.dispatchEvent(new Event('change', {bubbles: true}));
-        }""", PASSWORD)
-        page.wait_for_timeout(500)
+        # Usar jQuery directamente (el sitio ya lo carga) para llenar y disparar eventos
+        page.evaluate(f"""
+            $('#usuario').val('{USUARIO}').trigger('input').trigger('change').trigger('keyup');
+            $('#password').val('{PASSWORD}').trigger('input').trigger('change').trigger('keyup');
+        """)
 
         page.wait_for_timeout(500)
         print("Campos llenados, haciendo submit...")
