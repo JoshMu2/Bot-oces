@@ -20,30 +20,6 @@ CALLMEBOT_APIKEY = os.environ["CALLMEBOT_APIKEY"]
 STATE_FILE = "estado_eventos.json"
 SCREENSHOT_FILE = "debug_screenshot.png"
 
-# Script que se inyecta ANTES de cualquier JS del sitio
-# Parchea eval y Function para eliminar debugger, y oculta que es un bot
-STEALTH_SCRIPT = """
-// Eliminar navigator.webdriver (principal señal de bot)
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-// Parchear eval para eliminar debugger
-const _eval = window.eval;
-window.eval = function(code) {
-  if (typeof code === 'string') code = code.replace(/\\bdebugger\\b/g, '0');
-  return _eval.call(this, code);
-};
-
-// Parchear Function constructor para eliminar debugger
-const _Function = window.Function;
-window.Function = function(...args) {
-  if (args.length > 0 && typeof args[args.length - 1] === 'string') {
-    args[args.length - 1] = args[args.length - 1].replace(/\\bdebugger\\b/g, '0');
-  }
-  return _Function(...args);
-};
-window.Function.prototype = _Function.prototype;
-"""
-
 
 def enviar_whatsapp(mensaje: str):
     url = "https://api.callmebot.com/whatsapp.php"
@@ -68,50 +44,54 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-            ]
+            args=["--disable-blink-features=AutomationControlled"]
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            locale="es-MX",
         )
-
-        # Inyectar parches ANTES de que cargue cualquier JS del sitio
-        context.add_init_script(STEALTH_SCRIPT)
-
         page = context.new_page()
         page.goto(LOGIN_URL)
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
-
-        # Llenar con page.fill (simula tipeo real) apuntando directo a los id conocidos
-        page.fill("#usuario", USUARIO)
-        page.fill("#password", PASSWORD)
-        page.wait_for_timeout(500)
-
-        print("Campos llenados, enviando formulario...")
-        page.click("#login")
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(4000)
-
-        print("URL después del login:", page.url)
-
-        # Navegar a confirmaciones (el login va a inicio.html, no directo a confirmaciones)
-        page.goto(CONFIRMACIONES_URL)
-        page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
 
-        print("URL final:", page.url)
-        page.screenshot(path=SCREENSHOT_FILE, full_page=True)
+        # Hacer click en el campo, luego escribir letra por letra (dispara todos los eventos de jQuery)
+        page.click("#usuario")
+        page.keyboard.type(USUARIO, delay=100)
 
+        page.click("#password")
+        page.keyboard.type(PASSWORD, delay=100)
+
+        page.wait_for_timeout(500)
+        print("Campos llenados, haciendo submit...")
+        page.click("#login")
+
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(4000)
+        print("URL tras login:", page.url)
+
+        # Verificar si hay JWT en localStorage
+        token = page.evaluate("localStorage.getItem('key')")
+        print("JWT obtenido:", "SÍ" if token else "NO")
+
+        if not token:
+            page.screenshot(path=SCREENSHOT_FILE, full_page=True)
+            print("ADVERTENCIA: no se obtuvo token. Revisá debug_screenshot.png en artifacts.")
+            browser.close()
+            return
+
+        # Ya tenemos token, ir a confirmaciones
+        page.goto(CONFIRMACIONES_URL)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(4000)
+        print("URL final:", page.url)
+
+        page.screenshot(path=SCREENSHOT_FILE, full_page=True)
         contenido = page.inner_text("body")
         print("Primeros 400 caracteres:", contenido[:400])
         browser.close()
 
     if "EVENTOS DISPONIBLES" not in contenido:
-        print("ADVERTENCIA: login fallido. Revisá debug_screenshot.png en artifacts.")
+        print("ADVERTENCIA: no se encontró EVENTOS DISPONIBLES. Revisá el screenshot.")
         return
 
     match = re.search(r"EVENTOS DISPONIBLES(.*?)EVENTOS CONFIRMADOS", contenido, re.S)
