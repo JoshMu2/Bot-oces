@@ -7,7 +7,7 @@ import re
 import json
 import hashlib
 import requests
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Route
 
 LOGIN_URL = "https://eventossistema.com.mx/login.html"
 EVENTOS_URL = "https://eventossistema.com.mx/confirmaciones/default.html"
@@ -28,22 +28,29 @@ def enviar_whatsapp(mensaje: str):
     print("CallMeBot respuesta:", r.status_code, r.text[:200])
 
 
+def quitar_debugger(route: Route):
+    """Intercepta archivos JS y elimina sentencias debugger antes de ejecutarlos."""
+    response = route.fetch()
+    body = response.text()
+    body_limpio = re.sub(r'\bdebugger\b', '/* debugger eliminado */', body)
+    route.fulfill(response=response, body=body_limpio)
+
+
 def hacer_login(page):
+    # Interceptar todos los JS del sitio para eliminar debugger
+    page.route("**/*.js", quitar_debugger)
+
     page.goto(LOGIN_URL)
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(2000)
 
-    # Llenar con JavaScript directo para evitar el debugger anti-bot
+    # Llenar campos con JS directo usando los id reales del formulario
     page.evaluate(f"document.getElementById('usuario').value = '{USUARIO}'")
     page.evaluate(f"document.getElementById('password').value = '{PASSWORD}'")
-
-    # Disparar eventos de cambio para que el JS de validación los reconozca
     page.evaluate("document.getElementById('usuario').dispatchEvent(new Event('input', {bubbles: true}))")
     page.evaluate("document.getElementById('password').dispatchEvent(new Event('input', {bubbles: true}))")
 
-    print("Campos llenados via JS, enviando formulario...")
-
-    # Click en el botón de submit
+    page.wait_for_timeout(500)
     page.locator("#login").click()
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(3000)
@@ -51,7 +58,7 @@ def hacer_login(page):
     print("URL después del login:", page.url)
 
     if "confirmaciones" not in page.url:
-        print("No redirigió automáticamente, navegando directo...")
+        print("No redirigió, navegando directo a confirmaciones...")
         page.goto(EVENTOS_URL)
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
@@ -99,10 +106,7 @@ def main():
         browser.close()
 
     if texto_actual is None:
-        print(
-            "ADVERTENCIA: no se encontró EVENTOS DISPONIBLES. "
-            "Revisá la captura debug_screenshot.png en los artifacts."
-        )
+        print("ADVERTENCIA: no se encontró EVENTOS DISPONIBLES. Revisá debug_screenshot.png en los artifacts.")
         return
 
     hash_actual = hashlib.sha256(texto_actual.encode("utf-8")).hexdigest()
