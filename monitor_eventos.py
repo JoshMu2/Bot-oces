@@ -54,12 +54,15 @@ def main():
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(3000)
 
-        # Hacer click en el campo, luego escribir letra por letra (dispara todos los eventos de jQuery)
+        # Escribir usuario letra por letra
         page.click("#usuario")
-        page.keyboard.type(USUARIO, delay=100)
+        page.keyboard.type(USUARIO, delay=150)
+        page.wait_for_timeout(800)
 
-        page.click("#password")
-        page.keyboard.type(PASSWORD, delay=100)
+        # Usar Tab para pasar al campo de contraseña (más confiable que click)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(500)
+        page.keyboard.type(PASSWORD, delay=150)
 
         page.wait_for_timeout(500)
         print("Campos llenados, haciendo submit...")
